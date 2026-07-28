@@ -297,19 +297,27 @@ class MotorSpec:
             ``ensure_mode``/``send_mit`` scale MIT-mode floats correctly.
         sign: +1.0 or -1.0. Flips motor rotation direction to match the
             URDF joint's positive-rotation convention.
-        offset: Radians added to the URDF position to get the motor's raw
-            command (and subtracted from raw feedback to get URDF position).
-            Set by reading ``get_state().pos`` with the arm held at the
-            URDF's zero pose.
+        scale: Raw motor units per URDF unit (rad/rad for the six direct-
+            drive arm joints, hence 1.0; rad of motor shaft rotation per
+            metre of travel for the gripper's rack-and-pinion, hence >>1 —
+            the motor shaft doesn't turn 1:1 with a prismatic joint's linear
+            position). Applied as ``raw = sign * scale * urdf + offset`` /
+            ``urdf = sign * (raw - offset) / scale``. Also applied to
+            commanded velocity (chain rule) and inversely to feedforward
+            torque (virtual work: motor_tau = urdf_tau / scale).
+        offset: Raw units added to ``scale * urdf_position`` to get the
+            motor's raw command (and subtracted before dividing by scale to
+            get URDF position back from raw feedback). Set by reading
+            ``get_state().pos`` with the joint held at the URDF's zero pose.
         control_mode: "mit" (position+velocity+gains) or "force_pos"
             (force-limited position — safer for the gripper, avoids
             crushing on grasp).
         kp, kd: MIT-mode gains. Unused when control_mode="force_pos".
         force_pos_ratio: FORCE_POS-mode max force ratio in [0, 1]. Unused
             when control_mode="mit".
-        max_velocity: Hard safety clamp (rad/s) on the commanded velocity
-            sent to this motor, independent of what any solver outputs.
-            Defaults to the proven POS_VEL vlim from
+        max_velocity: Hard safety clamp (rad/s, raw/post-scale) on the
+            commanded velocity sent to this motor, independent of what any
+            solver outputs. Defaults to the proven POS_VEL vlim from
             ~/reBotArm_control_py/config/rebotarm_dm.yaml.
     """
 
@@ -317,6 +325,7 @@ class MotorSpec:
     feedback_id: Optional[int]
     model: str
     sign: float = 1.0
+    scale: float = 1.0
     offset: float = 0.0
     control_mode: str = "mit"
     kp: float = 8.0
@@ -404,9 +413,29 @@ MOTOR_MAP: Dict[str, MotorSpec] = {
     "joint4": MotorSpec(motor_id=0x04, feedback_id=0x14, model="4310", sign=1.0, offset=0.0, kp=8.0, kd=1.5, max_velocity=0.8),
     "joint5": MotorSpec(motor_id=0x05, feedback_id=0x15, model="4310", sign=1.0, offset=0.0, kp=8.0, kd=1.5, max_velocity=1.0),
     "joint6": MotorSpec(motor_id=0x06, feedback_id=0x16, model="4310", sign=1.0, offset=0.0, kp=8.0, kd=1.5, max_velocity=1.2),
+    # scale/offset re-derived 2026-07-22 after rerunning lerobot-calibrate
+    # (new gripper zero reference = default/open pose). Measured live via
+    # gripper_test_gui.py's raw_motor_pos readout at both physical extremes
+    # (URDF's own gripper_joint1=0.0/0.0715 confirmed closed/open via
+    # pinocchio FK -- fingers ~0mm apart at 0.0, ~143mm apart at 0.0715 --
+    # and cross-checked against the gripper's measured ~157mm length minus
+    # rack-and-pinion deadzone, matching the ~71.5mm URDF range):
+    #   physically open  (urdf=0.0715): raw = -0.0189
+    #   physically closed (urdf=0.0):   raw = +5.8082
+    # Solving raw = sign*scale*urdf + offset from those two points gives
+    # sign*scale = -81.498 -- far from +-1, confirming the gripper's motor
+    # does NOT turn 1:1 with the joint's linear travel like the arm's direct
+    # -drive joints do (a rack-and-pinion needs a large motor rotation per
+    # metre of slide) -- this is what the `scale` field above exists for.
+    # max_velocity raised from the pre-`scale` value of 1.0: that cap was
+    # tuned back when a full open<->close swing was (wrongly) only a 0.0715
+    # rad raw error; with scale=81.498 applied it's really a ~5.83 rad raw
+    # error, so the old cap made a full traverse take ~5.8s. 8.0 rad/s gives
+    # ~0.7s full-range while staying well under the DM4310's 30 rad/s rated
+    # VMAX -- starting point for further live tuning, not a final answer.
     "gripper_joint1": MotorSpec(
-        motor_id=0x07, feedback_id=0x17, model="4310", sign=-1.0, offset=0.0,
-        control_mode="mit", kp=8.0, kd=1.0, max_velocity=1.0,
+        motor_id=0x07, feedback_id=0x17, model="4310", sign=-1.0, scale=81.498, offset=5.8082,
+        control_mode="mit", kp=8.0, kd=1.0, max_velocity=8.0,
     ),
 }
 
@@ -565,8 +594,8 @@ class RebotArmBridge:
                         raise RuntimeError(
                             f"No feedback for joint '{name}' — check CAN wiring/power."
                         )
-                    positions.append(spec.sign * (state.pos - spec.offset))
-                    velocities.append(spec.sign * state.vel)
+                    positions.append(spec.sign * (state.pos - spec.offset) / spec.scale)
+                    velocities.append(spec.sign * state.vel / spec.scale)
                     raw.append((name, state.pos, state.vel, state.status_code))
 
             # Butterworth low-pass filter: raw encoder-derived velocity is
@@ -628,9 +657,9 @@ class RebotArmBridge:
         with self._can_lock:
             for i, name in enumerate(self.joint_names):
                 spec = self.motor_map[name]
-                motor_pos = spec.sign * clamped_position[i].item() + spec.offset
-                motor_vel = spec.sign * velocity[i].item()
-                motor_tau = spec.sign * tau_g[i]
+                motor_pos = spec.sign * clamped_position[i].item() * spec.scale + spec.offset
+                motor_vel = spec.sign * velocity[i].item() * spec.scale
+                motor_tau = spec.sign * tau_g[i] / spec.scale
                 if abs(motor_vel) > spec.max_velocity:
                     print(
                         f"  [safety] clamped oversized velocity for {name}: "
@@ -686,9 +715,9 @@ class RebotArmBridge:
         with self._can_lock:
             for i, name in enumerate(self.joint_names):
                 spec = self.motor_map[name]
-                motor_pos = spec.sign * clamped[i] + spec.offset
-                motor_vel = spec.sign * velocity[i]
-                motor_tau = spec.sign * tau_g[i]
+                motor_pos = spec.sign * clamped[i] * spec.scale + spec.offset
+                motor_vel = spec.sign * velocity[i] * spec.scale
+                motor_tau = spec.sign * tau_g[i] / spec.scale
                 if abs(motor_vel) > spec.max_velocity:
                     print(
                         f"  [safety] clamped oversized velocity for {name}: "
