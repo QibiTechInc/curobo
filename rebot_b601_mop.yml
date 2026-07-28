@@ -10,6 +10,7 @@ kinematics:
   - link4
   - link5
   - link6
+  - mop_mount
   - mop_tip
   collision_sphere_buffer: 0.0
   collision_spheres:
@@ -470,55 +471,65 @@ kinematics:
       - -0.014664994552731514
       - 0.008999999612569809
       radius: 0.0020000000949949026
+    mop_mount:
+    - center:
+      - 0.0
+      - 0.0
+      - 0.0
+      radius: 0.015
+    - center:
+      - 0.0
+      - 0.0
+      - 0.08299999999999999
+      radius: 0.015
+    - center:
+      - 0.0
+      - 0.0
+      - 0.16599999999999998
+      radius: 0.015
+    - center:
+      - 0.0
+      - 0.0
+      - 0.24899999999999997
+      radius: 0.015
+    - center:
+      - 0.0
+      - 0.0
+      - 0.33199999999999996
+      radius: 0.015
+    - center:
+      - 0.0
+      - 0.0
+      - 0.4149999999999999
+      radius: 0.015
     mop_tip:
     - center:
       - 0.0
       - 0.0
-      - -0.0
-      radius: 0.015
+      - 0.0
+      radius: 0.025
     - center:
+      - 0.07500000000000001
       - 0.0
       - 0.0
-      - -0.08299999999999999
-      radius: 0.015
+      radius: 0.025
     - center:
+      - 4.592425496802575e-18
+      - 0.07500000000000001
       - 0.0
-      - 0.0
-      - -0.16599999999999998
-      radius: 0.015
+      radius: 0.025
     - center:
+      - -0.07500000000000001
+      - 9.18485099360515e-18
       - 0.0
-      - 0.0
-      - -0.24899999999999997
-      radius: 0.015
+      radius: 0.025
     - center:
+      - -1.3777276490407725e-17
+      - -0.07500000000000001
       - 0.0
-      - 0.0
-      - -0.33199999999999996
-      radius: 0.015
-    - center:
-      - 0.0
-      - 0.0
-      - -0.4149999999999999
-      radius: 0.015
-    - center:
-      - -0.1
-      - 0.0
-      - 0.0
-      radius: 0.1
-    - center:
-      - 0.0
-      - 0.0
-      - 0.0
-      radius: 0.1
-    - center:
-      - 0.1
-      - 0.0
-      - 0.0
-      radius: 0.1
+      radius: 0.025
   cspace:
     acceleration_scale:
-    - 1.0
     - 1.0
     - 1.0
     - 1.0
@@ -532,7 +543,6 @@ kinematics:
     - 1.0
     - 1.0
     - 1.0
-    - 1.0
     default_joint_position:
     - 0.0
     - -1.5700000524520874
@@ -540,9 +550,7 @@ kinematics:
     - -0.1499999761581421
     - 0.0
     - 0.0
-    - 0.035750001668930054
     jerk_scale:
-    - 1.0
     - 1.0
     - 1.0
     - 1.0
@@ -556,9 +564,7 @@ kinematics:
     - joint4
     - joint5
     - joint6
-    - gripper_joint1
     max_acceleration:
-    - 10.0
     - 10.0
     - 10.0
     - 10.0
@@ -572,7 +578,6 @@ kinematics:
     - 500.0
     - 500.0
     - 500.0
-    - 500.0
     null_space_maximum_distance:
     - 1.0
     - 1.0
@@ -580,9 +585,7 @@ kinematics:
     - 1.0
     - 1.0
     - 1.0
-    - 1.0
     null_space_weight:
-    - 1.0
     - 1.0
     - 1.0
     - 1.0
@@ -597,32 +600,15 @@ kinematics:
     - 1.0
     - 1.0
     - 1.0
-    - 1.0
   debug: null
   external_asset_path: null
   external_robot_configs_path: null
-  extra_collision_spheres:
-    mop_tip: 9
-  extra_links:
-    mop_tip:
-      fixed_transform:
-      - 0.30159166621781486
-      - -0.03038767145189569
-      - 0.283450271285271
-      - 0.9146591275472565
-      - 0.07003592892652344
-      - 0.3919038373291199
-      - 0.07003592892652344
-      joint_name: mop_tip_joint
-      joint_type: FIXED
-      link_name: mop_tip
-      parent_link_name: link6
   format_version: 2.0
   grasp_contact_link_names: null
   load_meshes: false
   load_tool_frames_with_mesh: false
   lock_joints:
-    gripper_joint1: 0.03575
+    mop_tip_joint: 0.0
   mesh_link_names:
   - base_link
   - link1
@@ -631,6 +617,8 @@ kinematics:
   - link4
   - link5
   - link6
+  - mop_mount
+  - mop_tip
   self_collision_buffer:
     base_link: 0.0
     link1: 0.0
@@ -639,6 +627,7 @@ kinematics:
     link4: 0.0
     link5: 0.0
     link6: 0.0
+    mop_mount: 0.0
     mop_tip: 0.0
   self_collision_ignore:
     base_link:
@@ -663,13 +652,17 @@ kinematics:
     - link4
     - link6
     link6:
+    - mop_mount
+    - link5
+    mop_mount:
+    - link6
     - link5
     - mop_tip
     mop_tip:
+    - mop_mount
     - link6
-    - link5
   tool_frames:
   - mop_tip
-  urdf_path: /home/kendemu/ros2_ws/src/reBotArmController_ROS2/src/rebotarm_bringup/description/urdf/reBot_B601_DM_with_gripper.urdf
+  urdf_path: /home/kendemu/curobo/reBot_B601_DM_with_mop_r-45_p+90_y+15_1785237931.urdf
   use_external_assets: false
   use_global_cumul: true
